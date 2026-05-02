@@ -193,9 +193,9 @@ public class GameRoom extends JFrame {
                         int currRow = index / 8;
                         int currCol = index % 8;
 
-                        int dist = Math.max(Math.abs(prevRow - currRow), Math.abs(prevCol - currCol));
+                        int dist = Math.abs(prevRow - currRow) + Math.abs(prevCol - currCol);
                         if (dist > 1) {
-                            JOptionPane.showMessageDialog(GameRoom.this, "You can only move 1 box at a time!", "Invalid Move", JOptionPane.WARNING_MESSAGE);
+                            JOptionPane.showMessageDialog(GameRoom.this, "You can only move 1 box at a time (Left, Right, Up, or Down)!", "Invalid Move", JOptionPane.WARNING_MESSAGE);
                             return;
                         }
                     }
