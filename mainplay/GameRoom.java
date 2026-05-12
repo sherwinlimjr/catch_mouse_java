@@ -12,37 +12,17 @@ import java.io.File;
 import java.io.IOException;
 
 public class GameRoom extends JFrame {
-    private JLabel turnLabel;
-    private Timer gameTimer;
-    private int catTime;
-    private int mouseTime;
-    private int catMoves;
-    private int mouseMoves;
     private int catScore;
     private int mouseScore;
-    private int diceValue = 0;
-    private boolean hasRolled = false;
-    private JLabel diceLabel;
-    private JButton rollButton;
-    private int remainingMoves = 0;
-    private int[] currentBoardState;
+    
+    private int catIndex = 0;
+    private int mouseIndex = 47;
 
-    private String formatTime(int seconds) {
-        int mins = seconds / 60;
-        int secs = seconds % 60;
-        return String.format("%02d:%02d", mins, secs);
-    }
-
-    public GameRoom(int[] boardState, int catMoves, int mouseMoves, int catTime, int mouseTime, int catScore, int mouseScore) {
-        this.catMoves = catMoves;
-        this.mouseMoves = mouseMoves;
-        this.catTime = catTime;
-        this.mouseTime = mouseTime;
+    public GameRoom(int catScore, int mouseScore) {
         this.catScore = catScore;
         this.mouseScore = mouseScore;
-        this.currentBoardState = boardState != null ? boardState.clone() : new int[48];
         
-        setTitle("Catch Mouse - Player 1 (Cat)");
+        setTitle("Catch Mouse - Real-Time Action!");
         setSize(800, 750);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
@@ -51,224 +31,134 @@ public class GameRoom extends JFrame {
         getContentPane().setBackground(new Color(33, 33, 33));
         setLayout(new BorderLayout());
 
-        // Header Panel (Centered Turn Label)
+        // Header Panel
         JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
         headerPanel.setBackground(new Color(33, 33, 33));
         headerPanel.setBorder(new EmptyBorder(20, 20, 0, 20));
 
-        turnLabel = new JLabel("Player 1: Cat", SwingConstants.CENTER);
-        turnLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
-        turnLabel.setForeground(Color.WHITE);
-        headerPanel.add(turnLabel);
-
-        // Dice Section
-        JPanel dicePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        dicePanel.setOpaque(false);
-        
-        diceLabel = new JLabel("DICE: -", SwingConstants.CENTER);
-        diceLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
-        diceLabel.setForeground(Color.YELLOW);
-        diceLabel.setPreferredSize(new Dimension(100, 40));
-        
-        rollButton = new JButton("ROLL DICE");
-        rollButton.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        rollButton.setBackground(new Color(63, 81, 181));
-        rollButton.setForeground(Color.WHITE);
-        rollButton.setFocusPainted(false);
-        rollButton.addActionListener(e -> {
-            if (!hasRolled) {
-                diceValue = (int)(Math.random() * 6) + 1;
-                diceLabel.setText("DICE: " + diceValue + " (" + diceValue + " MOVES)");
-                remainingMoves = diceValue;
-                hasRolled = true;
-                rollButton.setEnabled(false);
-            }
-        });
-
-        dicePanel.add(diceLabel);
-        dicePanel.add(rollButton);
-        headerPanel.add(dicePanel);
+        JLabel titleLabel = new JLabel("Cat Score: " + catScore + "  |  Mouse Score: " + mouseScore, SwingConstants.CENTER);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        titleLabel.setForeground(Color.WHITE);
+        headerPanel.add(titleLabel);
         
         add(headerPanel, BorderLayout.NORTH);
-
-        // Timer logic removed
 
         // Main Container
         JPanel mainContainer = new JPanel(new GridBagLayout());
         mainContainer.setBackground(new Color(33, 33, 33));
         add(mainContainer, BorderLayout.CENTER);
 
-        // Game Board Panel (6x8 grid = 48 boxes)
-        JPanel gameBoardPanel = new JPanel(new GridLayout(6, 8, 8, 8));
-        gameBoardPanel.setBackground(new Color(45, 52, 54));
-        gameBoardPanel.setBorder(BorderFactory.createCompoundBorder(
-            new LineBorder(new Color(63, 81, 181), 5),
-            new EmptyBorder(15, 15, 15, 15)
-        ));
+        // Single Board Panel (Merged Tiles)
+        int boardWidth = 8 * 85;
+        int boardHeight = 6 * 85;
         
         int iconSize = 70;
         ImageIcon catIcon = loadTransparentIcon("mainplay/cat.png", iconSize);
         ImageIcon mouseIcon = loadTransparentIcon("mainplay/mouse.png", iconSize);
 
-        // Check if placement phase
-        boolean tempPlacement = true;
-        if (currentBoardState != null) {
-            for (int val : currentBoardState) {
-                if ((val & 1) != 0) {
-                    tempPlacement = false;
-                    break;
-                }
-            }
-        }
-        final boolean isPlacement = tempPlacement;
+        JPanel boardPanel = new JPanel() {
+            private final ImageIcon floorIcon = GameConfig.getTileIcon(0, 85, 85);
+            private final ImageIcon wallIcon = GameConfig.getTileIcon(1, 85, 85);
 
-        if (isPlacement) {
-            dicePanel.setVisible(false);
-            hasRolled = true; // Allow clicking without rolling
-        }
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
 
-        for (int i = 0; i < 48; i++) {
-            final int index = i; // final index for use in listener
-            JPanel box = new JPanel();
-            box.setPreferredSize(new Dimension(85, 85));
-            
-            Color defaultBg = new Color(53, 59, 72);
-            Color hoverBg = new Color(173, 216, 230);
-            Color defaultBorder = new Color(63, 81, 181);
-            Color hoverBorder = Color.CYAN;
-
-            box.setBackground(defaultBg);
-            box.setBorder(new LineBorder(defaultBorder, 2));
-            box.setLayout(new GridBagLayout());
-
-            JLabel iconLabel = new JLabel();
-            // Restore ONLY Player 1's pieces (Cats) using bitmask
-            if (currentBoardState != null && i < currentBoardState.length) {
-                if ((currentBoardState[i] & 1) != 0 && (currentBoardState[i] & 2) != 0) {
-                    iconLabel.setIcon(mouseIcon); 
-                } else if ((currentBoardState[i] & 1) != 0) {
-                    iconLabel.setIcon(catIcon);
-                } else if ((currentBoardState[i] & 2) != 0) {
-                    iconLabel.setIcon(mouseIcon);
-                }
-            }
-            box.add(iconLabel);
-
-            box.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mouseEntered(MouseEvent e) {
-                    // Always show hover now that overlapping is allowed
-                    if (iconLabel.getIcon() == null) {
-                        box.setBackground(hoverBg);
-                        box.setBorder(new LineBorder(hoverBorder, 2));
-                    }
-                }
-
-                @Override
-                public void mouseExited(MouseEvent e) {
-                    box.setBackground(defaultBg);
-                    box.setBorder(new LineBorder(defaultBorder, 2));
-                }
-
-                @Override
-                public void mousePressed(MouseEvent e) {
-                    // Check if move is valid (only 1 box away)
-                    int prevIndex = -1;
-                    if (currentBoardState != null) {
-                        for (int i = 0; i < 48; i++) {
-                            if ((currentBoardState[i] & 1) != 0) {
-                                prevIndex = i;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (prevIndex != -1) {
-                        if (!hasRolled) {
-                            JOptionPane.showMessageDialog(GameRoom.this, "Roll the dice first!", "Roll Dice", JOptionPane.WARNING_MESSAGE);
-                            return;
-                        }
-                        
-                        int prevRow = prevIndex / 8;
-                        int prevCol = prevIndex % 8;
-                        int currRow = index / 8;
-                        int currCol = index % 8;
-
-                        int dist = Math.abs(prevRow - currRow) + Math.abs(prevCol - currCol);
-                        if (dist > 1) {
-                            JOptionPane.showMessageDialog(GameRoom.this, "You can only move 1 box at a time (Left, Right, Up, or Down)!", "Invalid Move", JOptionPane.WARNING_MESSAGE);
-                            return;
-                        }
-                    }
-
-                    // Allow overlapping pieces as requested
-                    // Bitmask state: 1 (Cat), 2 (Mouse), 3 (Both)
+                for (int i = 0; i < 48; i++) {
+                    int r = i / 8;
+                    int c = i % 8;
+                    int x = c * 85;
+                    int y = r * 85;
                     
-                    // Immediately remove old cat icon from UI
-                    for (Component comp : gameBoardPanel.getComponents()) {
-                        if (comp instanceof JPanel) {
-                            JPanel p = (JPanel) comp;
-                            for (Component child : p.getComponents()) {
-                                if (child instanceof JLabel) {
-                                    JLabel label = (JLabel) child;
-                                    if (label.getIcon() == catIcon) {
-                                        label.setIcon(null);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Place the new Cat icon visually
-                    iconLabel.setIcon(catIcon);
-
-                    // Update internal state
-                    for (int i = 0; i < 48; i++) {
-                        currentBoardState[i] &= 2; // Keep only mouse
-                    }
-                    currentBoardState[index] |= 1; // Place cat
-
-                    if (isPlacement) {
-                        remainingMoves = 0; // End placement immediately
+                    if (GameConfig.isWall(i)) {
+                        if (wallIcon != null) g2.drawImage(wallIcon.getImage(), x, y, 85, 85, this);
                     } else {
-                        remainingMoves--;
-                        diceLabel.setText("MOVES LEFT: " + remainingMoves);
-                    }
-
-                    // Check for capture
-                    if ((currentBoardState[index] & 2) != 0) {
-                        JOptionPane.showMessageDialog(GameRoom.this, "The Cat caught the Mouse!", "Caught!", JOptionPane.INFORMATION_MESSAGE);
-                        mainplay.GameRoom resetRoom = new mainplay.GameRoom(new int[48], 0, 0, 600, 600, catScore + 1, mouseScore);
-                        resetRoom.setVisible(true);
-                        dispose();
-                        return;
-                    }
-
-                    if (remainingMoves <= 0) {
-                        // Disable further clicks
-                        for (Component comp : gameBoardPanel.getComponents()) {
-                            for (java.awt.event.MouseListener ml : comp.getMouseListeners()) {
-                                comp.removeMouseListener(ml);
-                            }
-                        }
-
-                        // Transition to Mouse
-                        Timer transitionTimer = new Timer(500, event -> {
-                            mainplay2.GameRoom nextRoom = new mainplay2.GameRoom(currentBoardState, catMoves + 1, mouseMoves, GameRoom.this.catTime, GameRoom.this.mouseTime, catScore, mouseScore);
-                            nextRoom.setVisible(true);
-                            dispose();
-                        });
-                        transitionTimer.setRepeats(false);
-                        transitionTimer.start();
+                        if (floorIcon != null) g2.drawImage(floorIcon.getImage(), x, y, 85, 85, this);
                     }
                 }
-            });
 
-            gameBoardPanel.add(box);
-        }
+                // Draw Mouse
+                int mr = mouseIndex / 8;
+                int mc = mouseIndex % 8;
+                int mx = mc * 85 + (85 - iconSize) / 2;
+                int my = mr * 85 + (85 - iconSize) / 2;
+                g2.drawImage(mouseIcon.getImage(), mx, my, iconSize, iconSize, this);
+                
+                // Draw Cat
+                int cr = catIndex / 8;
+                int cc = catIndex % 8;
+                int cx = cc * 85 + (85 - iconSize) / 2;
+                int cy = cr * 85 + (85 - iconSize) / 2;
+                g2.drawImage(catIcon.getImage(), cx, cy, iconSize, iconSize, this);
+            }
+        };
+        boardPanel.setPreferredSize(new Dimension(boardWidth, boardHeight));
+        boardPanel.setBorder(new LineBorder(new Color(63, 81, 181), 5));
 
-        mainContainer.add(gameBoardPanel);
-        System.out.println("Grid initialized with board state.");
+        java.util.function.Consumer<Boolean> checkWinCondition = (isCatMove) -> {
+            if (catIndex == mouseIndex) {
+                JOptionPane.showMessageDialog(GameRoom.this, "The Cat caught the Mouse!", "Game Over", JOptionPane.INFORMATION_MESSAGE);
+                mainplay.GameRoom resetRoom = new mainplay.GameRoom(catScore + 1, mouseScore);
+                resetRoom.setVisible(true);
+                dispose();
+            }
+        };
+
+        InputMap im = mainContainer.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        ActionMap am = mainContainer.getActionMap();
+
+        // Cat Controls (WASD)
+        im.put(KeyStroke.getKeyStroke("W"), "CAT_UP");
+        im.put(KeyStroke.getKeyStroke("S"), "CAT_DOWN");
+        im.put(KeyStroke.getKeyStroke("A"), "CAT_LEFT");
+        im.put(KeyStroke.getKeyStroke("D"), "CAT_RIGHT");
+
+        // Mouse Controls (Arrow Keys)
+        im.put(KeyStroke.getKeyStroke("UP"), "MOUSE_UP");
+        im.put(KeyStroke.getKeyStroke("DOWN"), "MOUSE_DOWN");
+        im.put(KeyStroke.getKeyStroke("LEFT"), "MOUSE_LEFT");
+        im.put(KeyStroke.getKeyStroke("RIGHT"), "MOUSE_RIGHT");
+
+        // Cat Actions
+        am.put("CAT_UP", createMoveAction(true, -1, 0, boardPanel, checkWinCondition));
+        am.put("CAT_DOWN", createMoveAction(true, 1, 0, boardPanel, checkWinCondition));
+        am.put("CAT_LEFT", createMoveAction(true, 0, -1, boardPanel, checkWinCondition));
+        am.put("CAT_RIGHT", createMoveAction(true, 0, 1, boardPanel, checkWinCondition));
+
+        // Mouse Actions
+        am.put("MOUSE_UP", createMoveAction(false, -1, 0, boardPanel, checkWinCondition));
+        am.put("MOUSE_DOWN", createMoveAction(false, 1, 0, boardPanel, checkWinCondition));
+        am.put("MOUSE_LEFT", createMoveAction(false, 0, -1, boardPanel, checkWinCondition));
+        am.put("MOUSE_RIGHT", createMoveAction(false, 0, 1, boardPanel, checkWinCondition));
+
+        mainContainer.add(boardPanel);
+        System.out.println("Real-time GameRoom initialized.");
+    }
+    
+    private AbstractAction createMoveAction(boolean isCat, int dRow, int dCol, JPanel boardPanel, java.util.function.Consumer<Boolean> checkWinCondition) {
+        return new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                int currentIndex = isCat ? catIndex : mouseIndex;
+                int r = currentIndex / 8 + dRow;
+                int c = currentIndex % 8 + dCol;
+                
+                if (r >= 0 && r < 6 && c >= 0 && c < 8) {
+                    int targetIndex = r * 8 + c;
+                    if (!GameConfig.isWall(targetIndex)) {
+                        if (isCat) {
+                            catIndex = targetIndex;
+                        } else {
+                            mouseIndex = targetIndex;
+                        }
+                        boardPanel.repaint();
+                        checkWinCondition.accept(isCat);
+                    }
+                }
+            }
+        };
     }
 
 

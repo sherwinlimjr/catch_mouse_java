@@ -98,14 +98,9 @@ public class GameRoom extends JFrame {
         mainContainer.setBackground(new Color(45, 52, 54));
         add(mainContainer, BorderLayout.CENTER);
 
-        // Game Board Panel (6x8 grid = 48 boxes)
-        JPanel gameBoardPanel = new JPanel(new GridLayout(6, 8, 8, 8));
-        gameBoardPanel.setBackground(new Color(33, 33, 33));
-        gameBoardPanel.setBorder(BorderFactory.createCompoundBorder(
-            new LineBorder(new Color(46, 125, 50), 5),
-            new EmptyBorder(15, 15, 15, 15)
-        ));
-        
+        // Single Board Panel (Merged Tiles)
+        int boardWidth = 8 * 85;
+        int boardHeight = 6 * 85;
         int iconSize = 70;
         ImageIcon catIcon = loadTransparentIcon("mainplay/cat.png", iconSize);
         ImageIcon mouseIcon = loadTransparentIcon("mainplay/mouse.png", iconSize);
@@ -127,51 +122,143 @@ public class GameRoom extends JFrame {
             hasRolled = true; // Allow clicking without rolling
         }
 
-        for (int i = 0; i < 48; i++) {
-            final int index = i;
-            JPanel box = new JPanel();
-            box.setPreferredSize(new Dimension(85, 85));
-            
-            Color defaultBg = new Color(53, 59, 72);
-            Color hoverBg = new Color(255, 234, 167);
-            Color defaultBorder = new Color(46, 125, 50);
-            Color hoverBorder = Color.GREEN;
+        JPanel boardPanel = new JPanel() {
+            private final ImageIcon floorIcon = mainplay.GameConfig.getTileIcon(0, 85, 85);
+            private final ImageIcon wallIcon = mainplay.GameConfig.getTileIcon(1, 85, 85);
 
-            box.setBackground(defaultBg);
-            box.setBorder(new LineBorder(defaultBorder, 2));
-            box.setLayout(new GridBagLayout());
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
 
-            JLabel iconLabel = new JLabel();
-            // Restore ONLY Player 2's pieces (Mice) using bitmask
-            if (currentBoardState != null && i < currentBoardState.length) {
-                if ((currentBoardState[index] & 1) != 0 && (currentBoardState[index] & 2) != 0) {
-                    iconLabel.setIcon(mouseIcon);
-                } else if ((currentBoardState[index] & 1) != 0) {
-                    iconLabel.setIcon(catIcon);
-                } else if ((currentBoardState[index] & 2) != 0) {
-                    iconLabel.setIcon(mouseIcon);
-                }
-            }
-            box.add(iconLabel);
+                for (int i = 0; i < 48; i++) {
+                    int r = i / 8;
+                    int c = i % 8;
+                    int x = c * 85;
+                    int y = r * 85;
 
-            box.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mouseEntered(MouseEvent e) {
-                    if (iconLabel.getIcon() == null) {
-                        box.setBackground(hoverBg);
-                        box.setBorder(new LineBorder(hoverBorder, 2));
+                    if (mainplay.GameConfig.isWall(i)) {
+                        if (wallIcon != null) g2.drawImage(wallIcon.getImage(), x, y, 85, 85, this);
+                    } else {
+                        if (floorIcon != null) g2.drawImage(floorIcon.getImage(), x, y, 85, 85, this);
                     }
                 }
 
-                @Override
-                public void mouseExited(MouseEvent e) {
-                    box.setBackground(defaultBg);
-                    box.setBorder(new LineBorder(defaultBorder, 2));
+                // Draw Icons
+                if (currentBoardState != null) {
+                    for (int i = 0; i < 48; i++) {
+                        int r = i / 8;
+                        int c = i % 8;
+                        int x = c * 85 + (85 - iconSize) / 2;
+                        int y = r * 85 + (85 - iconSize) / 2;
+
+                        if ((currentBoardState[i] & 1) != 0) {
+                            g2.drawImage(catIcon.getImage(), x, y, iconSize, iconSize, this);
+                        }
+                        if ((currentBoardState[i] & 2) != 0) {
+                            g2.drawImage(mouseIcon.getImage(), x, y, iconSize, iconSize, this);
+                        }
+                    }
+                }
+            }
+        };
+        boardPanel.setPreferredSize(new Dimension(boardWidth, boardHeight));
+        boardPanel.setBorder(new LineBorder(new Color(46, 125, 50), 5));
+
+        java.util.function.IntConsumer attemptMove = index -> {
+            if (index < 0 || index >= 48) return;
+
+            if (mainplay.GameConfig.isWall(index)) {
+                JOptionPane.showMessageDialog(GameRoom.this, "You cannot move into a wall!", "Blocked", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            int prevIndex = -1;
+            if (currentBoardState != null) {
+                for (int i = 0; i < 48; i++) {
+                    if ((currentBoardState[i] & 2) != 0) {
+                        prevIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (prevIndex != -1) {
+                if (!hasRolled) {
+                    JOptionPane.showMessageDialog(GameRoom.this, "Roll the dice first!", "Roll Dice", JOptionPane.WARNING_MESSAGE);
+                    return;
                 }
 
+                int prevRow = prevIndex / 8;
+                int prevCol = prevIndex % 8;
+                int r = index / 8;
+                int c = index % 8;
+                int dist = Math.abs(prevRow - r) + Math.abs(prevCol - c);
+                
+                if (dist > 1) {
+                    JOptionPane.showMessageDialog(GameRoom.this, "You can only move 1 tile at a time!", "Invalid Move", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+            }
+
+            for (int i = 0; i < 48; i++) {
+                currentBoardState[i] &= 1;
+            }
+            currentBoardState[index] |= 2;
+
+            if (isPlacement) {
+                remainingMoves = 0;
+            } else {
+                remainingMoves--;
+                diceLabel.setText("MOVES LEFT: " + remainingMoves);
+            }
+
+            boardPanel.repaint();
+
+            boolean caught = (currentBoardState[index] & 1) != 0;
+
+            if (caught) {
+                JOptionPane.showMessageDialog(GameRoom.this, "The Mouse was caught by the Cat!", "Caught!", JOptionPane.INFORMATION_MESSAGE);
+                mainplay.GameRoom resetRoom = new mainplay.GameRoom(new int[48], 0, 0, 600, 600, catScore + 1, mouseScore);
+                resetRoom.setVisible(true);
+                dispose();
+                return;
+            }
+
+            if (remainingMoves <= 0) {
+                mainplay.GameRoom nextRoom = new mainplay.GameRoom(currentBoardState, catMoves + 1, mouseMoves + 1, GameRoom.this.catTime, GameRoom.this.mouseTime, catScore, mouseScore);
+                nextRoom.setVisible(true);
+                dispose();
+            }
+        };
+
+        boardPanel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                int c = e.getX() / 85;
+                int r = e.getY() / 85;
+                int index = r * 8 + c;
+                attemptMove.accept(index);
+            }
+        });
+
+        InputMap im = mainContainer.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        ActionMap am = mainContainer.getActionMap();
+
+        String[] keys = {"UP", "DOWN", "LEFT", "RIGHT"};
+        int[] dRow = {-1, 1, 0, 0};
+        int[] dCol = {0, 0, -1, 1};
+
+        for (int k = 0; k < 4; k++) {
+            final int dr = dRow[k];
+            final int dc = dCol[k];
+            im.put(KeyStroke.getKeyStroke(keys[k]), keys[k]);
+            am.put(keys[k], new AbstractAction() {
                 @Override
-                public void mousePressed(MouseEvent e) {
-                    // Check if move is valid (only 1 box away)
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    if (isPlacement) return;
+
                     int prevIndex = -1;
                     if (currentBoardState != null) {
                         for (int i = 0; i < 48; i++) {
@@ -183,88 +270,17 @@ public class GameRoom extends JFrame {
                     }
 
                     if (prevIndex != -1) {
-                        if (!hasRolled) {
-                            JOptionPane.showMessageDialog(GameRoom.this, "Roll the dice first!", "Roll Dice", JOptionPane.WARNING_MESSAGE);
-                            return;
+                        int r = prevIndex / 8 + dr;
+                        int c = prevIndex % 8 + dc;
+                        if (r >= 0 && r < 6 && c >= 0 && c < 8) {
+                            attemptMove.accept(r * 8 + c);
                         }
-
-                        int prevRow = prevIndex / 8;
-                        int prevCol = prevIndex % 8;
-                        int currRow = index / 8;
-                        int currCol = index % 8;
-
-                        int dist = Math.abs(prevRow - currRow) + Math.abs(prevCol - currCol);
-                        if (dist > 1) {
-                            JOptionPane.showMessageDialog(GameRoom.this, "You can only move 1 box at a time (Left, Right, Up, or Down)!", "Invalid Move", JOptionPane.WARNING_MESSAGE);
-                            return;
-                        }
-                    }
-
-                    // Allow overlapping pieces as requested
-                    // Bitmask state: 1 (Cat), 2 (Mouse), 3 (Both)
-
-                    // Immediately remove old mouse icon from UI
-                    for (Component comp : gameBoardPanel.getComponents()) {
-                        if (comp instanceof JPanel) {
-                            JPanel p = (JPanel) comp;
-                            for (Component child : p.getComponents()) {
-                                if (child instanceof JLabel) {
-                                    JLabel label = (JLabel) child;
-                                    if (label.getIcon() == mouseIcon) {
-                                        label.setIcon(null);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Place the new Mouse icon
-                    iconLabel.setIcon(mouseIcon);
-
-                    // Update internal state
-                    for (int i = 0; i < 48; i++) {
-                        currentBoardState[i] &= 1; // Keep only cat
-                    }
-                    currentBoardState[index] |= 2; // Place mouse
-
-                    if (isPlacement) {
-                        remainingMoves = 0; // End placement immediately
-                    } else {
-                        remainingMoves--;
-                        diceLabel.setText("MOVES LEFT: " + remainingMoves);
-                    }
-
-                    // Capture Logic - Exact match
-                    boolean caught = (currentBoardState[index] & 1) != 0;
-
-                    if (caught) {
-                        JOptionPane.showMessageDialog(GameRoom.this, "The Mouse was caught by the Cat!", "Caught!", JOptionPane.INFORMATION_MESSAGE);
-                        mainplay.GameRoom resetRoom = new mainplay.GameRoom(new int[48], 0, 0, 600, 600, catScore + 1, mouseScore);
-                        resetRoom.setVisible(true);
-                        dispose();
-                        return;
-                    }
-
-                    if (remainingMoves <= 0) {
-                        // Disable further clicks
-                        for (Component comp : gameBoardPanel.getComponents()) {
-                            for (java.awt.event.MouseListener ml : comp.getMouseListeners()) {
-                                comp.removeMouseListener(ml);
-                            }
-                        }
-
-                        // Transition back to Cat turn
-                        mainplay.GameRoom nextRoom = new mainplay.GameRoom(currentBoardState, catMoves + 1, mouseMoves + 1, GameRoom.this.catTime, GameRoom.this.mouseTime, catScore, mouseScore);
-                        nextRoom.setVisible(true);
-                        dispose();
                     }
                 }
             });
-
-            gameBoardPanel.add(box);
         }
 
-        mainContainer.add(gameBoardPanel);
+        mainContainer.add(boardPanel);
     }
 
 
