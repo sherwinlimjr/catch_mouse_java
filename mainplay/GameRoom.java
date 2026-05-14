@@ -45,6 +45,14 @@ public class GameRoom extends JPanel {
     
     // Directional mouse sprites: [direction][frame] — 0=Right, 1=Left, 2=Up, 3=Down
     private BufferedImage[][] mouseDirFrames = new BufferedImage[4][2];
+    // Jump sprites: [direction]
+    private BufferedImage[] mouseJumpFrames = new BufferedImage[4];
+    private boolean isJumping = false;
+    private boolean canJump = true;
+    private Timer jumpCooldownTimer;
+    private Timer jumpDurationTimer;
+    private JLabel jumpLabel;
+
     // Directional cat sprites: [direction][frame] — 0=Right, 1=Left, 2=Up, 3=Down
     private BufferedImage[][] catPatrolFrames = new BufferedImage[4][2];
     private BufferedImage[][] catChaseFrames  = new BufferedImage[4][2];
@@ -53,7 +61,7 @@ public class GameRoom extends JPanel {
     private Timer animationTimer;
     private Timer mouseMoveTimer;     // Cooldown timer for mouse movement
     private boolean canMouseMove = true; // Whether mouse may move this tick
-    private static final int MOUSE_MOVE_DELAY = 150; // ms between mouse steps
+    private static final int MOUSE_MOVE_DELAY = 100; // ms between mouse steps
     
     private List<CatNPC> cats = new ArrayList<>();
     private boolean mouseStunned = false;
@@ -118,7 +126,17 @@ public class GameRoom extends JPanel {
         statsLabel = new JLabel("CHEESE: 0/" + cheeseRequired, SwingConstants.RIGHT);
         statsLabel.setFont(new Font("Arial Black", Font.BOLD, 16));
         statsLabel.setForeground(Color.WHITE);
-        rightHeader.add(statsLabel, BorderLayout.NORTH);
+
+        jumpLabel = new JLabel("JUMP: READY [SPACE]", SwingConstants.RIGHT);
+        jumpLabel.setFont(new Font("Arial Black", Font.BOLD, 14));
+        jumpLabel.setForeground(new Color(150, 255, 150));
+
+        JPanel statsPanel = new JPanel(new GridLayout(2, 1));
+        statsPanel.setOpaque(false);
+        statsPanel.add(statsLabel);
+        statsPanel.add(jumpLabel);
+
+        rightHeader.add(statsPanel, BorderLayout.NORTH);
 
         heartPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
         heartPanel.setOpaque(false);
@@ -195,7 +213,7 @@ public class GameRoom extends JPanel {
                 int mx = mouseCol * ts + (ts - charSize)/2, my = mouseRow * ts + (ts - charSize)/2;
 
                 // Pick correct directional sprite — no rotation needed!
-                BufferedImage mouseSprite = mouseDirFrames[mouseDirection][animationFrame % 2];
+                BufferedImage mouseSprite = isJumping ? mouseJumpFrames[mouseDirection] : mouseDirFrames[mouseDirection][animationFrame % 2];
                 
                 if (mouseSprite != null) {
                     Graphics2D g2dSprite = (Graphics2D) g2.create();
@@ -244,10 +262,91 @@ public class GameRoom extends JPanel {
         im.put(KeyStroke.getKeyStroke("DOWN"), "DOWN");
         im.put(KeyStroke.getKeyStroke("LEFT"), "LEFT");
         im.put(KeyStroke.getKeyStroke("RIGHT"), "RIGHT");
+        im.put(KeyStroke.getKeyStroke("SPACE"), "JUMP");
         am.put("UP", createMoveAction(-1, 0, boardPanel));
         am.put("DOWN", createMoveAction(1, 0, boardPanel));
         am.put("LEFT", createMoveAction(0, -1, boardPanel));
         am.put("RIGHT", createMoveAction(0, 1, boardPanel));
+        am.put("JUMP", new AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                if (isGameOver || mouseStunned || !canJump || isJumping) return;
+                
+                int dRow = 0, dCol = 0;
+                if (mouseDirection == 0) dCol = 1;      // Right
+                else if (mouseDirection == 1) dCol = -1; // Left
+                else if (mouseDirection == 2) dRow = -1; // Up
+                else if (mouseDirection == 3) dRow = 1;  // Down
+
+                // If the immediate next tile is a wall, we can't jump over it
+                if (GameConfig.isWall(mazeMap, mouseRow + dRow, mouseCol + dCol)) {
+                    return; // Blocked by solid wall in front
+                }
+
+                // Try jumping 2 tiles, fallback to 1 if the 2nd tile is a wall
+                int targetRow = mouseRow + (dRow * 2);
+                int targetCol = mouseCol + (dCol * 2);
+                if (GameConfig.isWall(mazeMap, targetRow, targetCol)) {
+                    targetRow = mouseRow + dRow;
+                    targetCol = mouseCol + dCol;
+                }
+
+                isJumping = true;
+                canJump = false;
+                jumpLabel.setText("JUMP: ACTIVE");
+                jumpLabel.setForeground(new Color(255, 200, 50));
+                
+                // Move immediately to target
+                mouseRow = targetRow;
+                mouseCol = targetCol;
+                
+                if (mouseRow == cheeseRow && mouseCol == cheeseCol) {
+                    cheeseCollected++;
+                    statsLabel.setText("CHEESE: " + cheeseCollected + "/" + cheeseRequired);
+                    if (cheeseCollected < cheeseRequired) spawnCheese();
+                    else { cheeseRow = -1; cheeseCol = -1; }
+                }
+
+                boardPanel.repaint();
+                
+                jumpDurationTimer = new Timer(300, ev -> {
+                    isJumping = false;
+                    
+                    // Check landing spot collisions
+                    if (GameConfig.isTrap(mazeMap, mouseRow, mouseCol, level)) takeDamage("Trap!", boardPanel);
+                    checkCollisions(boardPanel); 
+                    
+                    if (mouseRow == exitRow && mouseCol == exitCol && cheeseCollected >= cheeseRequired) {
+                        catAiTimer.stop();
+                        animationTimer.stop();
+                        if (level == Main.maxUnlockedLevel) Main.maxUnlockedLevel++;
+                        showCustomModal("Victory", "YOU WIN!", new Color(76, 175, 80));
+                        parentFrame.showLevelSelection();
+                    }
+
+                    boardPanel.repaint();
+                    
+                    int[] cooldownSeconds = {5};
+                    jumpLabel.setText("JUMP: " + cooldownSeconds[0] + "s");
+                    jumpLabel.setForeground(new Color(255, 100, 100));
+                    
+                    jumpCooldownTimer = new Timer(1000, ev2 -> {
+                        cooldownSeconds[0]--;
+                        if (cooldownSeconds[0] <= 0) {
+                            canJump = true;
+                            jumpLabel.setText("JUMP: READY [SPACE]");
+                            jumpLabel.setForeground(new Color(150, 255, 150));
+                            jumpCooldownTimer.stop();
+                        } else {
+                            jumpLabel.setText("JUMP: " + cooldownSeconds[0] + "s");
+                        }
+                    });
+                    jumpCooldownTimer.setRepeats(true);
+                    jumpCooldownTimer.start();
+                });
+                jumpDurationTimer.setRepeats(false);
+                jumpDurationTimer.start();
+            }
+        });
 
         initCatAI(boardPanel);
         initAnimation(boardPanel);
@@ -272,7 +371,7 @@ public class GameRoom extends JPanel {
                 int nr = mouseRow + dRow, nc = mouseCol + dCol;
                 if (!GameConfig.isWall(mazeMap, nr, nc)) {
                     mouseRow = nr; mouseCol = nc;
-                    if (GameConfig.isTrap(mazeMap, mouseRow, mouseCol, level)) takeDamage("Trap!", board);
+                    if (!isJumping && GameConfig.isTrap(mazeMap, mouseRow, mouseCol, level)) takeDamage("Trap!", board);
                     if (mouseRow == cheeseRow && mouseCol == cheeseCol) {
                         cheeseCollected++;
                         statsLabel.setText("CHEESE: " + cheeseCollected + "/" + cheeseRequired);
@@ -346,18 +445,47 @@ public class GameRoom extends JPanel {
     }
 
     private void takeDamage(String reason, JPanel board) {
-        if (mouseHitFlash > 0) return; // Invulnerability period
+        if (mouseHitFlash > 0 || isJumping) return; // Invulnerability period or jumping
         lives--; updateHearts();
         mouseHitFlash = 30; // Longer flicker animation for invulnerability
         if (lives <= 0) {
             catAiTimer.stop();
             animationTimer.stop();
-            JOptionPane.showMessageDialog(this, "Game Over!");
+            showCustomModal("Game Over", "GAME OVER!", new Color(244, 67, 54));
             parentFrame.showMainMenu();
         } else {
             // Keep mouse position. Cats also stay in their current position.
             // The mouse has invulnerability frames (mouseHitFlash > 0) to escape.
         }
+    }
+
+    private void showCustomModal(String title, String message, Color titleColor) {
+        JDialog dialog = new JDialog(parentFrame, title, true);
+        dialog.setUndecorated(true);
+        dialog.setSize(400, 200);
+        dialog.setLocationRelativeTo(parentFrame);
+        
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.setBackground(new Color(40, 40, 40));
+        mainPanel.setBorder(BorderFactory.createLineBorder(titleColor, 4));
+        
+        JLabel titleLabel = new JLabel(message, SwingConstants.CENTER);
+        titleLabel.setFont(new Font("Arial Black", Font.BOLD, 28));
+        titleLabel.setForeground(titleColor);
+        titleLabel.setBorder(new EmptyBorder(30, 10, 20, 10));
+        mainPanel.add(titleLabel, BorderLayout.CENTER);
+        
+        JPanel btnPanel = new JPanel();
+        btnPanel.setOpaque(false);
+        btnPanel.setBorder(new EmptyBorder(0, 10, 20, 10));
+        main.ModernButton okButton = new main.ModernButton("CONTINUE", new Color(66, 66, 66));
+        okButton.setPreferredSize(new Dimension(200, 50));
+        okButton.addActionListener(e -> dialog.dispose());
+        btnPanel.add(okButton);
+        mainPanel.add(btnPanel, BorderLayout.SOUTH);
+        
+        dialog.add(mainPanel);
+        dialog.setVisible(true);
     }
 
     private void loadGameAssets() {
@@ -403,6 +531,10 @@ public class GameRoom extends JPanel {
             // Load directional mouse sprites
             String[] dirs = {"right", "left", "up", "down"};
             for (int d = 0; d < 4; d++) {
+                File jumpFile = new File("mainplay/sprites/mouse_jump_" + dirs[d] + ".png");
+                if (jumpFile.exists()) mouseJumpFrames[d] = ImageIO.read(jumpFile);
+                else mouseJumpFrames[d] = mouseImg;
+                
                 for (int f = 1; f <= 2; f++) {
                     File spriteFile = new File("mainplay/sprites/mouse_" + dirs[d] + "_" + f + ".png");
                     if (spriteFile.exists()) {

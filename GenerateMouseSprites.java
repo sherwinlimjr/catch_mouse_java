@@ -29,7 +29,13 @@ public class GenerateMouseSprites {
         saveFrame("mainplay/sprites/mouse_down_1.png",  drawDown(false));
         saveFrame("mainplay/sprites/mouse_down_2.png",  drawDown(true));
 
-        System.out.println("All 8 mouse sprites generated successfully!");
+        // Jump sprites
+        saveFrame("mainplay/sprites/mouse_jump_right.png", drawJumpRight());
+        saveFrame("mainplay/sprites/mouse_jump_left.png",  drawJumpLeft());
+        saveFrame("mainplay/sprites/mouse_jump_up.png",    drawJumpUp());
+        saveFrame("mainplay/sprites/mouse_jump_down.png",  drawJumpDown());
+
+        System.out.println("All 12 mouse sprites generated successfully!");
     }
 
     static void saveFrame(String path, BufferedImage img) throws Exception {
@@ -225,5 +231,36 @@ public class GenerateMouseSprites {
 
         g.dispose();
         return img;
+    }
+    // ─── JUMP SPRITES ────────────────────────────────────────────────────────
+    static BufferedImage applyJumpEffect(BufferedImage baseImg) {
+        BufferedImage img = newCanvas();
+        Graphics2D g = makeG(img);
+        
+        // Draw shadow at the bottom
+        g.setColor(new Color(0, 0, 0, 80));
+        g.fillOval(16, 50, 32, 10);
+        
+        // Draw the mouse shifted up to simulate jumping
+        g.drawImage(baseImg, 0, -12, null);
+        
+        g.dispose();
+        return img;
+    }
+
+    static BufferedImage drawJumpRight() {
+        return applyJumpEffect(drawRight(false));
+    }
+
+    static BufferedImage drawJumpLeft() {
+        return applyJumpEffect(drawLeft(false));
+    }
+
+    static BufferedImage drawJumpUp() {
+        return applyJumpEffect(drawUp(false));
+    }
+
+    static BufferedImage drawJumpDown() {
+        return applyJumpEffect(drawDown(false));
     }
 }

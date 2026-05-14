@@ -27,16 +27,11 @@ public class SoundManager {
                 
                 // On Windows, use PowerShell to play MP3 as Java Sound API lacks native support
                 if (System.getProperty("os.name").toLowerCase().contains("win")) {
-                    String script = "Add-Type -AssemblyName PresentationCore; " +
-                                   "$player = New-Object System.Windows.Media.MediaPlayer; " +
-                                   "$player.Open('" + absPath + "'); " +
-                                   "$player.Play(); " +
-                                   "while($true) { " +
-                                   "  if($player.NaturalDuration.HasTimeSpan -and $player.Position -ge $player.NaturalDuration.TimeSpan) { " +
-                                   "    $player.Position = [System.TimeSpan]::Zero; $player.Play() " +
-                                   "  }; " +
-                                   "  Start-Sleep 1 " +
-                                   "}";
+                    String script = "$player = New-Object -ComObject WMPlayer.OCX; " +
+                                   "$player.URL = '" + absPath + "'; " +
+                                   "$player.settings.setMode('loop', $true); " +
+                                   "$player.controls.play(); " +
+                                   "while($true) { Start-Sleep 1 }";
 
                     ProcessBuilder pb = new ProcessBuilder("powershell", "-WindowStyle", "Hidden", "-Command", script);
                     musicProcess = pb.start();
