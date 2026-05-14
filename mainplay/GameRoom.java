@@ -4,15 +4,14 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
-import javax.swing.border.LineBorder;
 import javax.swing.border.EmptyBorder;
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import main.Main;
 
-public class GameRoom extends JFrame {
+public class GameRoom extends JPanel {
+    private Main parentFrame;
     private int catScore;
     private int mouseScore;
     private int level;
@@ -42,9 +41,7 @@ public class GameRoom extends JFrame {
     private BufferedImage doorOpenImg;
     private BufferedImage doorClosedImg;
     
-    private int iconSize = 70;
     private int mouseHitFlash = 0;
-    private int catHitFlash = 0;
     
     private BufferedImage[] mouseWalkFrames = new BufferedImage[4];
     private BufferedImage[] mouseRunFrames = new BufferedImage[4];
@@ -58,7 +55,8 @@ public class GameRoom extends JFrame {
     private boolean mouseStunned = false;
     private boolean isGameOver = false;
 
-    public GameRoom(int level, int catScore, int mouseScore) {
+    public GameRoom(Main parentFrame, int level, int catScore, int mouseScore) {
+        this.parentFrame = parentFrame;
         this.level = level;
         this.catScore = catScore;
         this.mouseScore = mouseScore;
@@ -89,12 +87,9 @@ public class GameRoom extends JFrame {
         }
 
         // 3. UI Setup
-        setTitle("Cheese Caper - Level " + level);
-        setSize(800, 750);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLocationRelativeTo(null);
-        setResizable(false);
         setLayout(new BorderLayout());
+        setFocusable(true); // Needed to receive key events when acting as main panel
+        requestFocusInWindow();
 
         // Header
         JPanel headerPanel = new JPanel(new GridLayout(1, 3));
@@ -144,7 +139,7 @@ public class GameRoom extends JFrame {
                 int rows = mazeMap.length;
                 int cols = mazeMap[0].length;
                 
-                // Calculate dynamic tile size to fit window (approx 800x600 available space)
+                // Calculate dynamic tile size to fit window
                 int ts = Math.min(760 / cols, 560 / rows);
                 int mapW = cols * ts;
                 int mapH = rows * ts;
@@ -201,9 +196,11 @@ public class GameRoom extends JFrame {
                 if (mouseSprite != null) {
                     Graphics2D g2dSprite = (Graphics2D) g2.create();
                     g2dSprite.translate(mx + charSize/2, my + charSize/2);
-                    if (mouseDirection == 1) g2dSprite.scale(-1, 1);
-                    else if (mouseDirection == 2) g2dSprite.rotate(-Math.PI / 2);
-                    else if (mouseDirection == 3) g2dSprite.rotate(Math.PI / 2);
+                    // Base mouse image faces LEFT
+                    if (mouseDirection == 0) g2dSprite.scale(-1, 1); // Moving Right: flip it
+                    // if mouseDirection == 1 (Left), no transform needed since it already faces left
+                    else if (mouseDirection == 2) g2dSprite.rotate(Math.PI / 2); // Moving Up: rotate 90 deg clockwise
+                    else if (mouseDirection == 3) g2dSprite.rotate(-Math.PI / 2); // Moving Down: rotate -90 deg counter-clockwise
                     
                     if (mouseHitFlash > 0) {
                         mouseHitFlash--;
@@ -238,8 +235,8 @@ public class GameRoom extends JFrame {
         mainContainer.add(boardPanel, gbc);
 
         // Controls
-        InputMap im = mainContainer.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
-        ActionMap am = mainContainer.getActionMap();
+        InputMap im = this.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        ActionMap am = this.getActionMap();
         im.put(KeyStroke.getKeyStroke("UP"), "UP");
         im.put(KeyStroke.getKeyStroke("DOWN"), "DOWN");
         im.put(KeyStroke.getKeyStroke("LEFT"), "LEFT");
@@ -249,9 +246,10 @@ public class GameRoom extends JFrame {
         am.put("LEFT", createMoveAction(0, -1, boardPanel));
         am.put("RIGHT", createMoveAction(0, 1, boardPanel));
 
-        initCatAI();
-        initAnimation();
+        initCatAI(boardPanel);
+        initAnimation(boardPanel);
     }
+    
     private void spawnCheese() {
         int index = GameConfig.getRandomFloorIndex(mazeMap);
         cheeseRow = index / mazeMap[0].length;
@@ -271,7 +269,7 @@ public class GameRoom extends JFrame {
                 int nr = mouseRow + dRow, nc = mouseCol + dCol;
                 if (!GameConfig.isWall(mazeMap, nr, nc)) {
                     mouseRow = nr; mouseCol = nc;
-                    if (GameConfig.isTrap(mazeMap, mouseRow, mouseCol, level)) takeDamage("Trap!");
+                    if (GameConfig.isTrap(mazeMap, mouseRow, mouseCol, level)) takeDamage("Trap!", board);
                     if (mouseRow == cheeseRow && mouseCol == cheeseCol) {
                         cheeseCollected++;
                         statsLabel.setText("CHEESE: " + cheeseCollected + "/" + cheeseRequired);
@@ -280,11 +278,11 @@ public class GameRoom extends JFrame {
                     }
                     if (mouseRow == exitRow && mouseCol == exitCol && cheeseCollected >= cheeseRequired) {
                         catAiTimer.stop();
+                        animationTimer.stop();
                         if (level == Main.maxUnlockedLevel) Main.maxUnlockedLevel++;
-                        new inputplay.LevelSelectScreen().setVisible(true);
-                        dispose();
+                        parentFrame.showLevelSelection();
                     }
-                    checkCollisions();
+                    checkCollisions(board);
                     board.repaint();
                 }
             }
@@ -305,35 +303,34 @@ public class GameRoom extends JFrame {
                 else heartPanel.add(new JLabel(emptyIcon));
             }
         } catch (Exception e) {
-            // Fallback to simple text if images missing
             heartPanel.add(new JLabel("LIVES: " + lives));
         }
         heartPanel.revalidate();
     }
 
-    private void initCatAI() {
+    private void initCatAI(JPanel board) {
         catAiTimer = new Timer(300, e -> {
             if (isGameOver) return;
             for (CatNPC c : cats) c.update(mouseRow, mouseCol, mazeMap);
-            checkCollisions();
-            repaint();
+            checkCollisions(board);
+            board.repaint();
         });
         catAiTimer.start();
     }
 
-    private void checkCollisions() {
-        for (CatNPC c : cats) if (c.row == mouseRow && c.col == mouseCol) takeDamage("Caught!");
+    private void checkCollisions(JPanel board) {
+        for (CatNPC c : cats) if (c.row == mouseRow && c.col == mouseCol) takeDamage("Caught!", board);
     }
 
-    private void takeDamage(String reason) {
+    private void takeDamage(String reason, JPanel board) {
         if (mouseHitFlash > 0) return; // Invulnerability period
         lives--; updateHearts();
         mouseHitFlash = 30; // Longer flicker animation for invulnerability
         if (lives <= 0) {
             catAiTimer.stop();
+            animationTimer.stop();
             JOptionPane.showMessageDialog(this, "Game Over!");
-            new main.Main().setVisible(true);
-            dispose();
+            parentFrame.showMainMenu();
         } else {
             // Keep mouse position, but reset cats to avoid instant death loop
             for (CatNPC c : cats) { c.row = c.startRow; c.col = c.startCol; c.state = CatNPC.State.PATROL; }
@@ -380,10 +377,6 @@ public class GameRoom extends JFrame {
             }
             gWall.dispose();
 
-            // 3. Heart Icons
-            generateHeartImage(true);
-            generateHeartImage(false);
-
             for (int i = 0; i < 4; i++) {
                 mouseWalkFrames[i] = mouseImg;
                 mouseRunFrames[i] = mouseRunImg;
@@ -414,7 +407,6 @@ public class GameRoom extends JFrame {
                 int g = (rgb >> 8) & 0xFF;
                 int b = rgb & 0xFF;
                 
-                // Manhattan distance to handle anti-aliased edges of the magenta background
                 int diff = Math.abs(r - kr) + Math.abs(g - kg) + Math.abs(b - kb);
                 if (diff < 60) {
                     res.setRGB(x, y, 0x00FFFFFF);
@@ -426,37 +418,8 @@ public class GameRoom extends JFrame {
         return res;
     }
 
-    private void generateHeartImage(boolean full) {
-        String path = full ? "mainplay/heart_full.png" : "mainplay/heart_empty.png";
-        File file = new File(path);
-        if (file.exists()) return;
-        
-        try {
-            BufferedImage img = new BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB);
-            Graphics2D g = img.createGraphics();
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            
-            if (full) {
-                g.setColor(new Color(220, 40, 40));
-                g.fillOval(4, 4, 14, 14);
-                g.fillOval(14, 4, 14, 14);
-                int[] tx = {4, 16, 28}, ty = {14, 28, 14};
-                g.fillPolygon(tx, ty, 3);
-            } else {
-                g.setStroke(new BasicStroke(2));
-                g.setColor(new Color(100, 50, 40));
-                g.drawOval(4, 4, 14, 14);
-                g.drawOval(14, 4, 14, 14);
-                int[] tx = {4, 16, 28}, ty = {14, 28, 14};
-                g.drawPolygon(tx, ty, 3);
-            }
-            g.dispose();
-            ImageIO.write(img, "png", file);
-        } catch (Exception e) {}
-    }
-
-    private void initAnimation() {
-        animationTimer = new Timer(100, e -> { animationFrame++; repaint(); });
+    private void initAnimation(JPanel board) {
+        animationTimer = new Timer(100, e -> { animationFrame++; board.repaint(); });
         animationTimer.start();
     }
 }

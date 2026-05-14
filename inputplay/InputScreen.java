@@ -24,9 +24,7 @@ public class InputScreen extends JFrame {
         ModernButton pvpButton = new ModernButton("PLAYER VS PLAYER", new Color(63, 81, 181));
         pvpButton.setPreferredSize(new Dimension(300, 80));
         pvpButton.addActionListener(e -> {
-            mainplay.GameRoom game = new mainplay.GameRoom(1, 0, 0);
-            game.setVisible(true);
-            this.dispose();
+            JOptionPane.showMessageDialog(this, "Player VS Player mode is not fully implemented yet.");
         });
         add(pvpButton, gbc);
     }

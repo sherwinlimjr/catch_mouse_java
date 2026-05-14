@@ -2,6 +2,7 @@ package main;
 
 import javax.swing.*;
 import inputplay.InputScreen;
+import mainplay.GameRoom;
 
 import javax.imageio.ImageIO;
 import java.io.File;
@@ -15,37 +16,26 @@ public class Main extends JFrame {
 
     public Main() {
         this.isRunning = false;
-        setupWindow();
-    }
-
-    private void setupWindow() {
         setTitle("Cheese Caper: The Catch");
         setSize(800, 650);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setResizable(false);
+        showMainMenu();
+    }
 
-        // --- Custom Background Panel ---
+    public void showMainMenu() {
         JPanel bgPanel = new JPanel(new GridBagLayout()) {
-            private BufferedImage bgImage;
-            {
-                try {
-                    bgImage = ImageIO.read(new File("main/menu_bg.png"));
-                } catch (IOException ex) {
-                    System.err.println("Could not load background image.");
-                }
-            }
-
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
+                BufferedImage bgImage = SharedAssets.getImage("main/menu_bg.png");
                 if (bgImage != null) {
                     g.drawImage(bgImage, 0, 0, getWidth(), getHeight(), this);
                 }
             }
         };
-        setContentPane(bgPanel);
-        setLayout(new GridBagLayout());
+
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(10, 10, 10, 10);
         gbc.gridx = 0;
@@ -54,7 +44,7 @@ public class Main extends JFrame {
         CartoonLogo cartoonLogo = new CartoonLogo();
         gbc.gridy = 0;
         gbc.insets = new Insets(0, 0, 40, 0); // Spacing above buttons
-        add(cartoonLogo, gbc);
+        bgPanel.add(cartoonLogo, gbc);
 
         // --- Buttons ---
         JPanel buttonPanel = new JPanel(new GridLayout(3, 1, 0, 15));
@@ -63,18 +53,13 @@ public class Main extends JFrame {
         ModernButton playButton = new ModernButton("PLAY CAMPAIGN", new Color(46, 125, 50));
         playButton.setPreferredSize(new Dimension(250, 60));
         playButton.addActionListener(e -> {
-            inputplay.LevelSelectScreen levelScreen = new inputplay.LevelSelectScreen();
-            levelScreen.setVisible(true);
-            this.dispose();
+            showLevelSelection();
         });
 
         ModernButton endlessButton = new ModernButton("ENDLESS MODE", new Color(194, 24, 91));
         endlessButton.setPreferredSize(new Dimension(250, 60));
         endlessButton.addActionListener(e -> {
-            // Endless mode is high level with random maze (if implemented, default to level 10 logic)
-            mainplay.GameRoom game = new mainplay.GameRoom(10, 0, 0); 
-            game.setVisible(true);
-            this.dispose();
+            showGameRoom(10, 0, 0);
         });
 
         ModernButton exitButton = new ModernButton("EXIT GAME", new Color(66, 66, 66));
@@ -86,7 +71,23 @@ public class Main extends JFrame {
         buttonPanel.add(exitButton);
 
         gbc.gridy = 1;
-        add(buttonPanel, gbc);
+        bgPanel.add(buttonPanel, gbc);
+
+        setContentPane(bgPanel);
+        revalidate();
+        repaint();
+    }
+
+    public void showLevelSelection() {
+        setContentPane(new inputplay.LevelSelectScreen(this));
+        revalidate();
+        repaint();
+    }
+
+    public void showGameRoom(int level, int catScore, int mouseScore) {
+        setContentPane(new mainplay.GameRoom(this, level, catScore, mouseScore));
+        revalidate();
+        repaint();
     }
 
     public void start() {
@@ -97,9 +98,8 @@ public class Main extends JFrame {
         });
     }
 
-
-
     public static void main(String[] args) {
+        SharedAssets.preload();
         Main game = new Main();
         game.start();
     }
