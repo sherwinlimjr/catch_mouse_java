@@ -43,8 +43,8 @@ public class GameRoom extends JPanel {
     
     private int mouseHitFlash = 0;
     
-    private BufferedImage[] mouseWalkFrames = new BufferedImage[4];
-    private BufferedImage[] mouseRunFrames = new BufferedImage[4];
+    // Directional mouse sprites: [direction][frame] — 0=Right, 1=Left, 2=Up, 3=Down
+    private BufferedImage[][] mouseDirFrames = new BufferedImage[4][2];
     private BufferedImage[] catProwlFrames = new BufferedImage[4];
     private BufferedImage[] catChaseFrames = new BufferedImage[4];
     
@@ -189,24 +189,17 @@ public class GameRoom extends JPanel {
                 // Layer 4: Characters
                 int charSize = (int)(ts * 0.85);
                 int mx = mouseCol * ts + (ts - charSize)/2, my = mouseRow * ts + (ts - charSize)/2;
-                boolean chasing = false;
-                for (CatNPC cat : cats) if (cat.state == CatNPC.State.CHASE) chasing = true;
-                BufferedImage mouseSprite = chasing ? mouseRunFrames[animationFrame % 4] : mouseWalkFrames[animationFrame % 4];
+
+                // Pick correct directional sprite — no rotation needed!
+                BufferedImage mouseSprite = mouseDirFrames[mouseDirection][animationFrame % 2];
                 
                 if (mouseSprite != null) {
                     Graphics2D g2dSprite = (Graphics2D) g2.create();
-                    g2dSprite.translate(mx + charSize/2, my + charSize/2);
-                    // Base mouse image faces LEFT
-                    if (mouseDirection == 0) g2dSprite.scale(-1, 1); // Moving Right: flip it
-                    // if mouseDirection == 1 (Left), no transform needed since it already faces left
-                    else if (mouseDirection == 2) g2dSprite.rotate(Math.PI / 2); // Moving Up: rotate 90 deg clockwise
-                    else if (mouseDirection == 3) g2dSprite.rotate(-Math.PI / 2); // Moving Down: rotate -90 deg counter-clockwise
-                    
                     if (mouseHitFlash > 0) {
                         mouseHitFlash--;
-                        if (mouseHitFlash % 2 != 0) g2dSprite.drawImage(mouseSprite, -charSize/2, -charSize/2, charSize, charSize, null);
+                        if (mouseHitFlash % 2 != 0) g2dSprite.drawImage(mouseSprite, mx, my, charSize, charSize, null);
                     } else {
-                        g2dSprite.drawImage(mouseSprite, -charSize/2, -charSize/2, charSize, charSize, null);
+                        g2dSprite.drawImage(mouseSprite, mx, my, charSize, charSize, null);
                     }
                     g2dSprite.dispose();
                 }
@@ -377,9 +370,21 @@ public class GameRoom extends JPanel {
             }
             gWall.dispose();
 
+            // Load directional mouse sprites
+            String[] dirs = {"right", "left", "up", "down"};
+            for (int d = 0; d < 4; d++) {
+                for (int f = 1; f <= 2; f++) {
+                    File spriteFile = new File("mainplay/sprites/mouse_" + dirs[d] + "_" + f + ".png");
+                    if (spriteFile.exists()) {
+                        mouseDirFrames[d][f - 1] = ImageIO.read(spriteFile);
+                    } else {
+                        // Fallback: use old mouse image if new sprites missing
+                        mouseDirFrames[d][f - 1] = mouseImg;
+                    }
+                }
+            }
+
             for (int i = 0; i < 4; i++) {
-                mouseWalkFrames[i] = mouseImg;
-                mouseRunFrames[i] = mouseRunImg;
                 catProwlFrames[i] = catImg;
                 catChaseFrames[i] = catImg;
             }
