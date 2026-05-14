@@ -92,9 +92,40 @@ public class LevelSelectScreen extends JPanel {
             parentFrame.showMainMenu();
         });
 
+        // Bottom Panel for Buttons
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 0));
+        bottomPanel.setOpaque(false);
+
+        // Sound Toggle Button
+        JButton soundBtn = new JButton(main.SoundManager.isMuted() ? "SOUND: OFF" : "SOUND: ON") {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                Color c1 = main.SoundManager.isMuted() ? new Color(100, 100, 100) : new Color(100, 80, 40);
+                GradientPaint gp = new GradientPaint(0, 0, c1, 0, getHeight(), c1.darker());
+                g2.setPaint(gp);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 15, 15);
+                super.paintComponent(g);
+            }
+        };
+        soundBtn.setPreferredSize(new Dimension(150, 50));
+        soundBtn.setForeground(Color.WHITE);
+        soundBtn.setFont(new Font("Arial Black", Font.BOLD, 14));
+        soundBtn.setContentAreaFilled(false);
+        soundBtn.setBorderPainted(false);
+        soundBtn.addActionListener(e -> {
+            main.SoundManager.toggleMute();
+            soundBtn.setText(main.SoundManager.isMuted() ? "SOUND: OFF" : "SOUND: ON");
+            soundBtn.repaint();
+        });
+
+        bottomPanel.add(soundBtn);
+        bottomPanel.add(backBtn);
+
         gbc.gridy = 1;
         gbc.weighty = 0.2;
         gbc.insets = new Insets(0, 0, 30, 0);
-        bgPanel.add(backBtn, gbc);
+        bgPanel.add(bottomPanel, gbc);
     }
 }

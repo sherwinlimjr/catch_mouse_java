@@ -25,6 +25,7 @@ public class Main extends JFrame {
     }
 
     public void showMainMenu() {
+        SoundManager.playBackgroundMusic("backgroundsound.mp3");
         JPanel bgPanel = new JPanel(new GridBagLayout()) {
             @Override
             protected void paintComponent(Graphics g) {
@@ -47,7 +48,7 @@ public class Main extends JFrame {
         bgPanel.add(cartoonLogo, gbc);
 
         // --- Buttons ---
-        JPanel buttonPanel = new JPanel(new GridLayout(2, 1, 0, 15));
+        JPanel buttonPanel = new JPanel(new GridLayout(3, 1, 0, 15));
         buttonPanel.setOpaque(false);
 
         ModernButton playButton = new ModernButton("PLAY CAMPAIGN", new Color(46, 125, 50));
@@ -60,7 +61,15 @@ public class Main extends JFrame {
         exitButton.setPreferredSize(new Dimension(250, 60));
         exitButton.addActionListener(e -> System.exit(0));
 
+        ModernButton soundButton = new ModernButton(SoundManager.isMuted() ? "SOUND: OFF" : "SOUND: ON", new Color(100, 80, 40));
+        soundButton.setPreferredSize(new Dimension(250, 60));
+        soundButton.addActionListener(e -> {
+            SoundManager.toggleMute();
+            soundButton.setText(SoundManager.isMuted() ? "SOUND: OFF" : "SOUND: ON");
+        });
+
         buttonPanel.add(playButton);
+        buttonPanel.add(soundButton);
         buttonPanel.add(exitButton);
 
         gbc.gridy = 1;
@@ -72,12 +81,14 @@ public class Main extends JFrame {
     }
 
     public void showLevelSelection() {
+        SoundManager.playBackgroundMusic("backgroundsound.mp3");
         setContentPane(new inputplay.LevelSelectScreen(this));
         revalidate();
         repaint();
     }
 
     public void showGameRoom(int level, int catScore, int mouseScore) {
+        SoundManager.stopBackgroundMusic();
         setContentPane(new mainplay.GameRoom(this, level, catScore, mouseScore));
         revalidate();
         repaint();
