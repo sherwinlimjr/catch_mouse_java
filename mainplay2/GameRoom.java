@@ -220,14 +220,14 @@ public class GameRoom extends JFrame {
 
             if (caught) {
                 JOptionPane.showMessageDialog(GameRoom.this, "The Mouse was caught by the Cat!", "Caught!", JOptionPane.INFORMATION_MESSAGE);
-                mainplay.GameRoom resetRoom = new mainplay.GameRoom(new int[48], 0, 0, 600, 600, catScore + 1, mouseScore);
+                GameRoom resetRoom = new GameRoom(new int[48], 0, 0, 600, 600, catScore + 1, mouseScore);
                 resetRoom.setVisible(true);
                 dispose();
                 return;
             }
 
             if (remainingMoves <= 0) {
-                mainplay.GameRoom nextRoom = new mainplay.GameRoom(currentBoardState, catMoves + 1, mouseMoves + 1, GameRoom.this.catTime, GameRoom.this.mouseTime, catScore, mouseScore);
+                GameRoom nextRoom = new GameRoom(currentBoardState, catMoves + 1, mouseMoves + 1, GameRoom.this.catTime, GameRoom.this.mouseTime, catScore, mouseScore);
                 nextRoom.setVisible(true);
                 dispose();
             }

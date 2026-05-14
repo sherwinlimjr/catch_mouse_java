@@ -6,218 +6,457 @@ import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
 import javax.swing.border.LineBorder;
 import javax.swing.border.EmptyBorder;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import main.Main;
 
 public class GameRoom extends JFrame {
     private int catScore;
     private int mouseScore;
+    private int level;
+    private int lives = 3;
     
-    private int catIndex = 0;
-    private int mouseIndex = 47;
+    private int mouseRow = 1, mouseCol = 1;
+    private int mouseDirection = 0; // 0=Right, 1=Left, 2=Up, 3=Down
+    private int cheeseRow, cheeseCol;
+    private int exitRow, exitCol;
+    private int[][] mazeMap;
+    
+    private int cheeseCollected = 0;
+    private int cheeseRequired = 3;
+    
+    private JLabel statsLabel;
+    private JLabel levelLabel;
+    private JPanel heartPanel;
+    private Timer catAiTimer;
+    
+    private BufferedImage mouseImg;
+    private BufferedImage mouseRunImg;
+    private BufferedImage catImg;
+    private BufferedImage floorImg;
+    private BufferedImage wallImg;
+    private BufferedImage cheeseImg;
+    private BufferedImage trapImg;
+    private BufferedImage doorOpenImg;
+    private BufferedImage doorClosedImg;
+    
+    private int iconSize = 70;
+    private int mouseHitFlash = 0;
+    private int catHitFlash = 0;
+    
+    private BufferedImage[] mouseWalkFrames = new BufferedImage[4];
+    private BufferedImage[] mouseRunFrames = new BufferedImage[4];
+    private BufferedImage[] catProwlFrames = new BufferedImage[4];
+    private BufferedImage[] catChaseFrames = new BufferedImage[4];
+    
+    private int animationFrame = 0;
+    private Timer animationTimer;
+    
+    private List<CatNPC> cats = new ArrayList<>();
+    private boolean mouseStunned = false;
+    private boolean isGameOver = false;
 
-    public GameRoom(int catScore, int mouseScore) {
+    public GameRoom(int level, int catScore, int mouseScore) {
+        this.level = level;
         this.catScore = catScore;
         this.mouseScore = mouseScore;
         
-        setTitle("Catch Mouse - Real-Time Action!");
+        // 1. Initial Data
+        this.mazeMap = GameConfig.generateMaze(level);
+        int rows = mazeMap.length;
+        int cols = mazeMap[0].length;
+        
+        loadGameAssets(); 
+        spawnCheese();
+        
+        this.exitRow = rows - 2;
+        this.exitCol = cols - 2;
+        
+        // 2. Level Rules & Cat Spawning
+        cheeseRequired = 3 + (level * 2);
+        int catCount = 1 + (level / 2);
+        for (int i = 0; i < catCount; i++) {
+            int r = 1 + (int)(Math.random() * (rows - 2));
+            int c = 1 + (int)(Math.random() * (cols - 2));
+            boolean onDoor = (r == exitRow && c == exitCol);
+            if (mazeMap[r][c] == 0 && (r != 1 || c != 1) && !onDoor) {
+                cats.add(new CatNPC(r, c, Math.max(1, c - 3), Math.min(cols - 2, c + 3)));
+            } else {
+                i--; // Retry
+            }
+        }
+
+        // 3. UI Setup
+        setTitle("Cheese Caper - Level " + level);
         setSize(800, 750);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setResizable(false);
-
-        getContentPane().setBackground(new Color(33, 33, 33));
         setLayout(new BorderLayout());
 
-        // Header Panel
-        JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        headerPanel.setBackground(new Color(33, 33, 33));
-        headerPanel.setBorder(new EmptyBorder(20, 20, 0, 20));
+        // Header
+        JPanel headerPanel = new JPanel(new GridLayout(1, 3));
+        headerPanel.setBackground(new Color(60, 40, 30)); // Dark Woody Brown
+        headerPanel.setBorder(new EmptyBorder(10, 20, 10, 20));
 
-        JLabel titleLabel = new JLabel("Cat Score: " + catScore + "  |  Mouse Score: " + mouseScore, SwingConstants.CENTER);
-        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
-        titleLabel.setForeground(Color.WHITE);
+        // 1. Title
+        JLabel titleLabel = new JLabel("CHEESE CAPER: THE CATCH");
+        titleLabel.setFont(new Font("Arial Black", Font.BOLD, 22));
+        titleLabel.setForeground(new Color(255, 213, 79)); // Gold/Yellow
         headerPanel.add(titleLabel);
-        
+
+        // 2. Level Center
+        levelLabel = new JLabel("LEVEL " + level, SwingConstants.CENTER);
+        levelLabel.setFont(new Font("Arial Black", Font.BOLD, 18));
+        levelLabel.setForeground(Color.WHITE);
+        headerPanel.add(levelLabel);
+
+        // 3. Stats Right
+        JPanel rightHeader = new JPanel(new BorderLayout());
+        rightHeader.setOpaque(false);
+        statsLabel = new JLabel("CHEESE: 0/" + cheeseRequired, SwingConstants.RIGHT);
+        statsLabel.setFont(new Font("Arial Black", Font.BOLD, 16));
+        statsLabel.setForeground(Color.WHITE);
+        rightHeader.add(statsLabel, BorderLayout.NORTH);
+
+        heartPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+        heartPanel.setOpaque(false);
+        updateHearts();
+        rightHeader.add(heartPanel, BorderLayout.SOUTH);
+        headerPanel.add(rightHeader);
+
         add(headerPanel, BorderLayout.NORTH);
 
-        // Main Container
+        // Game Board
         JPanel mainContainer = new JPanel(new GridBagLayout());
-        mainContainer.setBackground(new Color(33, 33, 33));
+        mainContainer.setBackground(new Color(215, 204, 200));
         add(mainContainer, BorderLayout.CENTER);
 
-        // Single Board Panel (Merged Tiles)
-        int boardWidth = 8 * 85;
-        int boardHeight = 6 * 85;
-        
-        int iconSize = 70;
-        ImageIcon catIcon = loadTransparentIcon("mainplay/cat.png", iconSize);
-        ImageIcon mouseIcon = loadTransparentIcon("mainplay/mouse.png", iconSize);
-
         JPanel boardPanel = new JPanel() {
-            private final ImageIcon floorIcon = GameConfig.getTileIcon(0, 85, 85);
-            private final ImageIcon wallIcon = GameConfig.getTileIcon(1, 85, 85);
-
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
                 Graphics2D g2 = (Graphics2D) g;
-                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-                for (int i = 0; i < 48; i++) {
-                    int r = i / 8;
-                    int c = i % 8;
-                    int x = c * 85;
-                    int y = r * 85;
-                    
-                    if (GameConfig.isWall(i)) {
-                        if (wallIcon != null) g2.drawImage(wallIcon.getImage(), x, y, 85, 85, this);
-                    } else {
-                        if (floorIcon != null) g2.drawImage(floorIcon.getImage(), x, y, 85, 85, this);
+                int rows = mazeMap.length;
+                int cols = mazeMap[0].length;
+                
+                // Calculate dynamic tile size to fit window (approx 800x600 available space)
+                int ts = Math.min(760 / cols, 560 / rows);
+                int mapW = cols * ts;
+                int mapH = rows * ts;
+                int offsetX = (getWidth() - mapW) / 2;
+                int offsetY = (getHeight() - mapH) / 2;
+                
+                g2.translate(offsetX, offsetY);
+
+                // Draw Wooden Frame Border
+                g2.setColor(new Color(80, 50, 40));
+                g2.setStroke(new BasicStroke(10));
+                g2.drawRect(-5, -5, mapW + 10, mapH + 10);
+                g2.setColor(new Color(110, 70, 50));
+                g2.setStroke(new BasicStroke(4));
+                g2.drawRect(-7, -7, mapW + 14, mapH + 14);
+
+                // Layer 1: Floor & Walls
+                for (int r = 0; r < rows; r++) {
+                    for (int c = 0; c < cols; c++) {
+                        int x = c * ts, y = r * ts;
+                        if (mazeMap[r][c] == 1) {
+                             if (wallImg != null) g2.drawImage(wallImg, x, y, ts, ts, null);
+                             else { g2.setColor(new Color(34, 100, 34)); g2.fillRect(x, y, ts, ts); }
+                        } else {
+                             if (floorImg != null) g2.drawImage(floorImg, x, y, ts, ts, null);
+                             else { g2.setColor(new Color(200, 200, 190)); g2.fillRect(x, y, ts, ts); }
+                             
+                             if (GameConfig.isTrap(mazeMap, r, c, level)) {
+                                 if (trapImg != null) g2.drawImage(trapImg, x + ts/8, y + ts/8, ts - ts/4, ts - ts/4, null);
+                             }
+                        }
+                        
+                        if (r == exitRow && c == exitCol) {
+                            BufferedImage door = (cheeseCollected >= cheeseRequired) ? doorOpenImg : doorClosedImg;
+                            if (door != null) g2.drawImage(door, x, y, ts, ts, null);
+                        }
                     }
                 }
 
-                // Draw Mouse
-                int mr = mouseIndex / 8;
-                int mc = mouseIndex % 8;
-                int mx = mc * 85 + (85 - iconSize) / 2;
-                int my = mr * 85 + (85 - iconSize) / 2;
-                g2.drawImage(mouseIcon.getImage(), mx, my, iconSize, iconSize, this);
+                // Layer 3: Items
+                if (cheeseRow != -1) {
+                    int itemSize = (int)(ts * 0.7);
+                    int x = cheeseCol * ts + (ts - itemSize)/2, y = cheeseRow * ts + (ts - itemSize)/2;
+                    if (cheeseImg != null) g2.drawImage(cheeseImg, x, y, itemSize, itemSize, null);
+                }
                 
-                // Draw Cat
-                int cr = catIndex / 8;
-                int cc = catIndex % 8;
-                int cx = cc * 85 + (85 - iconSize) / 2;
-                int cy = cr * 85 + (85 - iconSize) / 2;
-                g2.drawImage(catIcon.getImage(), cx, cy, iconSize, iconSize, this);
+                // Layer 4: Characters
+                int charSize = (int)(ts * 0.85);
+                int mx = mouseCol * ts + (ts - charSize)/2, my = mouseRow * ts + (ts - charSize)/2;
+                boolean chasing = false;
+                for (CatNPC cat : cats) if (cat.state == CatNPC.State.CHASE) chasing = true;
+                BufferedImage mouseSprite = chasing ? mouseRunFrames[animationFrame % 4] : mouseWalkFrames[animationFrame % 4];
+                
+                if (mouseSprite != null) {
+                    Graphics2D g2dSprite = (Graphics2D) g2.create();
+                    g2dSprite.translate(mx + charSize/2, my + charSize/2);
+                    if (mouseDirection == 1) g2dSprite.scale(-1, 1);
+                    else if (mouseDirection == 2) g2dSprite.rotate(-Math.PI / 2);
+                    else if (mouseDirection == 3) g2dSprite.rotate(Math.PI / 2);
+                    
+                    if (mouseHitFlash > 0) {
+                        mouseHitFlash--;
+                        if (mouseHitFlash % 2 != 0) g2dSprite.drawImage(mouseSprite, -charSize/2, -charSize/2, charSize, charSize, null);
+                    } else {
+                        g2dSprite.drawImage(mouseSprite, -charSize/2, -charSize/2, charSize, charSize, null);
+                    }
+                    g2dSprite.dispose();
+                }
+
+                for (CatNPC cat : cats) {
+                    int cx = cat.col * ts + (ts - charSize)/2, cy = cat.row * ts + (ts - charSize)/2;
+                    BufferedImage cs = (cat.state == CatNPC.State.CHASE) ? catChaseFrames[animationFrame % 4] : catProwlFrames[animationFrame % 4];
+                    if (cs != null) {
+                        Graphics2D g2dCat = (Graphics2D) g2.create();
+                        g2dCat.translate(cx + charSize/2, cy + charSize/2);
+                        if (cat.direction == 1) g2dCat.scale(-1, 1);
+                        else if (cat.direction == 2) g2dCat.rotate(-Math.PI / 2);
+                        else if (cat.direction == 3) g2dCat.rotate(Math.PI / 2);
+                        g2dCat.drawImage(cs, -charSize/2, -charSize/2, charSize, charSize, null);
+                        g2dCat.dispose();
+                    }
+                }
             }
         };
-        boardPanel.setPreferredSize(new Dimension(boardWidth, boardHeight));
-        boardPanel.setBorder(new LineBorder(new Color(63, 81, 181), 5));
 
-        java.util.function.Consumer<Boolean> checkWinCondition = (isCatMove) -> {
-            if (catIndex == mouseIndex) {
-                JOptionPane.showMessageDialog(GameRoom.this, "The Cat caught the Mouse!", "Game Over", JOptionPane.INFORMATION_MESSAGE);
-                mainplay.GameRoom resetRoom = new mainplay.GameRoom(catScore + 1, mouseScore);
-                resetRoom.setVisible(true);
-                dispose();
-            }
-        };
+        boardPanel.setPreferredSize(new Dimension(8 * 85, 6 * 85));
+        boardPanel.setOpaque(false);
+        
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0; gbc.gridy = 0;
+        mainContainer.add(boardPanel, gbc);
 
+        // Controls
         InputMap im = mainContainer.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         ActionMap am = mainContainer.getActionMap();
+        im.put(KeyStroke.getKeyStroke("UP"), "UP");
+        im.put(KeyStroke.getKeyStroke("DOWN"), "DOWN");
+        im.put(KeyStroke.getKeyStroke("LEFT"), "LEFT");
+        im.put(KeyStroke.getKeyStroke("RIGHT"), "RIGHT");
+        am.put("UP", createMoveAction(-1, 0, boardPanel));
+        am.put("DOWN", createMoveAction(1, 0, boardPanel));
+        am.put("LEFT", createMoveAction(0, -1, boardPanel));
+        am.put("RIGHT", createMoveAction(0, 1, boardPanel));
 
-        // Cat Controls (WASD)
-        im.put(KeyStroke.getKeyStroke("W"), "CAT_UP");
-        im.put(KeyStroke.getKeyStroke("S"), "CAT_DOWN");
-        im.put(KeyStroke.getKeyStroke("A"), "CAT_LEFT");
-        im.put(KeyStroke.getKeyStroke("D"), "CAT_RIGHT");
-
-        // Mouse Controls (Arrow Keys)
-        im.put(KeyStroke.getKeyStroke("UP"), "MOUSE_UP");
-        im.put(KeyStroke.getKeyStroke("DOWN"), "MOUSE_DOWN");
-        im.put(KeyStroke.getKeyStroke("LEFT"), "MOUSE_LEFT");
-        im.put(KeyStroke.getKeyStroke("RIGHT"), "MOUSE_RIGHT");
-
-        // Cat Actions
-        am.put("CAT_UP", createMoveAction(true, -1, 0, boardPanel, checkWinCondition));
-        am.put("CAT_DOWN", createMoveAction(true, 1, 0, boardPanel, checkWinCondition));
-        am.put("CAT_LEFT", createMoveAction(true, 0, -1, boardPanel, checkWinCondition));
-        am.put("CAT_RIGHT", createMoveAction(true, 0, 1, boardPanel, checkWinCondition));
-
-        // Mouse Actions
-        am.put("MOUSE_UP", createMoveAction(false, -1, 0, boardPanel, checkWinCondition));
-        am.put("MOUSE_DOWN", createMoveAction(false, 1, 0, boardPanel, checkWinCondition));
-        am.put("MOUSE_LEFT", createMoveAction(false, 0, -1, boardPanel, checkWinCondition));
-        am.put("MOUSE_RIGHT", createMoveAction(false, 0, 1, boardPanel, checkWinCondition));
-
-        mainContainer.add(boardPanel);
-        System.out.println("Real-time GameRoom initialized.");
+        initCatAI();
+        initAnimation();
     }
-    
-    private AbstractAction createMoveAction(boolean isCat, int dRow, int dCol, JPanel boardPanel, java.util.function.Consumer<Boolean> checkWinCondition) {
+    private void spawnCheese() {
+        int index = GameConfig.getRandomFloorIndex(mazeMap);
+        cheeseRow = index / mazeMap[0].length;
+        cheeseCol = index % mazeMap[0].length;
+    }
+
+    private AbstractAction createMoveAction(int dRow, int dCol, JPanel board) {
         return new AbstractAction() {
-            @Override
             public void actionPerformed(java.awt.event.ActionEvent e) {
-                int currentIndex = isCat ? catIndex : mouseIndex;
-                int r = currentIndex / 8 + dRow;
-                int c = currentIndex % 8 + dCol;
+                if (isGameOver || mouseStunned) return;
                 
-                if (r >= 0 && r < 6 && c >= 0 && c < 8) {
-                    int targetIndex = r * 8 + c;
-                    if (!GameConfig.isWall(targetIndex)) {
-                        if (isCat) {
-                            catIndex = targetIndex;
-                        } else {
-                            mouseIndex = targetIndex;
-                        }
-                        boardPanel.repaint();
-                        checkWinCondition.accept(isCat);
+                if (dCol == 1) mouseDirection = 0;
+                else if (dCol == -1) mouseDirection = 1;
+                else if (dRow == -1) mouseDirection = 2;
+                else if (dRow == 1) mouseDirection = 3;
+                
+                int nr = mouseRow + dRow, nc = mouseCol + dCol;
+                if (!GameConfig.isWall(mazeMap, nr, nc)) {
+                    mouseRow = nr; mouseCol = nc;
+                    if (GameConfig.isTrap(mazeMap, mouseRow, mouseCol, level)) takeDamage("Trap!");
+                    if (mouseRow == cheeseRow && mouseCol == cheeseCol) {
+                        cheeseCollected++;
+                        statsLabel.setText("CHEESE: " + cheeseCollected + "/" + cheeseRequired);
+                        if (cheeseCollected < cheeseRequired) spawnCheese();
+                        else { cheeseRow = -1; cheeseCol = -1; }
                     }
+                    if (mouseRow == exitRow && mouseCol == exitCol && cheeseCollected >= cheeseRequired) {
+                        catAiTimer.stop();
+                        if (level == Main.maxUnlockedLevel) Main.maxUnlockedLevel++;
+                        new inputplay.LevelSelectScreen().setVisible(true);
+                        dispose();
+                    }
+                    checkCollisions();
+                    board.repaint();
                 }
             }
         };
     }
 
-
-
-    /**
-     * Loads an image and returns a scaled ImageIcon.
-     * - If the image already has a transparent corner (pre-transparent PNG), it is
-     *   used as-is (only converted to ARGB for rendering).
-     * - If the image has a solid background, the top-left pixel color is sampled and
-     *   removed within a tolerance range, making those pixels transparent.
-     */
-    private ImageIcon loadTransparentIcon(String path, int size) {
+    private void updateHearts() {
+        heartPanel.removeAll();
         try {
-            BufferedImage original = ImageIO.read(new File(path));
-            BufferedImage transparent = new BufferedImage(
-                original.getWidth(), original.getHeight(), BufferedImage.TYPE_INT_ARGB);
+            BufferedImage fullImg = ImageIO.read(new File("mainplay/heart_full.png"));
+            BufferedImage emptyImg = ImageIO.read(new File("mainplay/heart_empty.png"));
+            
+            ImageIcon fullIcon = new ImageIcon(fullImg.getScaledInstance(20, 20, Image.SCALE_SMOOTH));
+            ImageIcon emptyIcon = new ImageIcon(emptyImg.getScaledInstance(20, 20, Image.SCALE_SMOOTH));
+            
+            for (int i = 0; i < 4; i++) {
+                if (i < lives) heartPanel.add(new JLabel(fullIcon));
+                else heartPanel.add(new JLabel(emptyIcon));
+            }
+        } catch (Exception e) {
+            // Fallback to simple text if images missing
+            heartPanel.add(new JLabel("LIVES: " + lives));
+        }
+        heartPanel.revalidate();
+    }
 
-            // Check if top-left pixel is already transparent (alpha == 0)
-            int topLeft = original.getRGB(0, 0);
-            int topLeftAlpha = (topLeft >> 24) & 0xFF;
-            boolean alreadyTransparent = (topLeftAlpha == 0);
+    private void initCatAI() {
+        catAiTimer = new Timer(300, e -> {
+            if (isGameOver) return;
+            for (CatNPC c : cats) c.update(mouseRow, mouseCol, mazeMap);
+            checkCollisions();
+            repaint();
+        });
+        catAiTimer.start();
+    }
 
-            if (alreadyTransparent) {
-                // Image already has transparency — just copy all pixels as-is
-                Graphics2D g2d = transparent.createGraphics();
-                g2d.drawImage(original, 0, 0, null);
-                g2d.dispose();
-            } else {
-                // Sample top-left pixel RGB as background color to remove
-                int bgR = (topLeft >> 16) & 0xFF;
-                int bgG = (topLeft >> 8) & 0xFF;
-                int bgB = topLeft & 0xFF;
-                int tolerance = 40; // pixels within this distance become transparent
+    private void checkCollisions() {
+        for (CatNPC c : cats) if (c.row == mouseRow && c.col == mouseCol) takeDamage("Caught!");
+    }
 
-                for (int y = 0; y < original.getHeight(); y++) {
-                    for (int x = 0; x < original.getWidth(); x++) {
-                        int pixel = original.getRGB(x, y);
-                        int a = (pixel >> 24) & 0xFF;
-                        int r = (pixel >> 16) & 0xFF;
-                        int g = (pixel >> 8) & 0xFF;
-                        int b = pixel & 0xFF;
+    private void takeDamage(String reason) {
+        if (mouseHitFlash > 0) return; // Invulnerability period
+        lives--; updateHearts();
+        mouseHitFlash = 30; // Longer flicker animation for invulnerability
+        if (lives <= 0) {
+            catAiTimer.stop();
+            JOptionPane.showMessageDialog(this, "Game Over!");
+            new main.Main().setVisible(true);
+            dispose();
+        } else {
+            // Keep mouse position, but reset cats to avoid instant death loop
+            for (CatNPC c : cats) { c.row = c.startRow; c.col = c.startCol; c.state = CatNPC.State.PATROL; }
+        }
+    }
 
-                        if (a == 0 ||
-                            (Math.abs(r - bgR) <= tolerance &&
-                             Math.abs(g - bgG) <= tolerance &&
-                             Math.abs(b - bgB) <= tolerance)) {
-                            transparent.setRGB(x, y, 0x00000000); // fully transparent
-                        } else {
-                            transparent.setRGB(x, y, pixel);
-                        }
-                    }
+    private void loadGameAssets() {
+        try {
+            mouseImg = makeTransparent(ImageIO.read(new File("mainplay/mouse.png")));
+            mouseRunImg = makeTransparent(ImageIO.read(new File("mainplay/mouse_run.png")));
+            catImg = makeTransparent(ImageIO.read(new File("mainplay/cat.png")));
+            cheeseImg = makeTransparent(ImageIO.read(new File("mainplay/cheese.png")));
+            trapImg = makeTransparent(ImageIO.read(new File("mainplay/trap.png")));
+            doorOpenImg = makeTransparent(ImageIO.read(new File("mainplay/door_open.png")));
+            doorClosedImg = makeTransparent(ImageIO.read(new File("mainplay/door_closed.png")));
+
+            // Procedural Tiles matching the screenshot
+            java.util.Random rand = new java.util.Random();
+            
+            // 1. Stone Floor Tile
+            floorImg = new BufferedImage(64, 64, BufferedImage.TYPE_INT_RGB);
+            Graphics2D gFloor = floorImg.createGraphics();
+            gFloor.setColor(new Color(190, 195, 185)); // Stone beige
+            gFloor.fillRect(0, 0, 64, 64);
+            gFloor.setColor(new Color(160, 165, 155));
+            gFloor.drawRect(0, 0, 63, 63); // Tile borders
+            // Add some cracks
+            gFloor.setColor(new Color(140, 145, 135));
+            for(int i=0; i<5; i++) {
+                int x1 = rand.nextInt(64), y1 = rand.nextInt(64);
+                gFloor.drawLine(x1, y1, x1 + rand.nextInt(10), y1 + rand.nextInt(10));
+            }
+            gFloor.dispose();
+
+            // 2. Hedge Wall Tile
+            wallImg = new BufferedImage(64, 64, BufferedImage.TYPE_INT_RGB);
+            Graphics2D gWall = wallImg.createGraphics();
+            gWall.setColor(new Color(20, 60, 20)); // Deep green
+            gWall.fillRect(0, 0, 64, 64);
+            for(int i=0; i<200; i++) {
+                int gr = 50 + rand.nextInt(100);
+                gWall.setColor(new Color(gr/4, gr, gr/5));
+                gWall.fillOval(rand.nextInt(60), rand.nextInt(60), 5, 5);
+            }
+            gWall.dispose();
+
+            // 3. Heart Icons
+            generateHeartImage(true);
+            generateHeartImage(false);
+
+            for (int i = 0; i < 4; i++) {
+                mouseWalkFrames[i] = mouseImg;
+                mouseRunFrames[i] = mouseRunImg;
+                catProwlFrames[i] = catImg;
+                catChaseFrames[i] = catImg;
+            }
+        } catch (Exception e) {
+            System.err.println("Error loading assets: " + e.getMessage());
+        }
+    }
+
+    private BufferedImage makeTransparent(BufferedImage img) {
+        if (img == null) return null;
+        int width = img.getWidth();
+        int height = img.getHeight();
+        BufferedImage res = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        
+        // Use the top-left pixel as the transparent key
+        int keyRGB = img.getRGB(0, 0);
+        int kr = (keyRGB >> 16) & 0xFF;
+        int kg = (keyRGB >> 8) & 0xFF;
+        int kb = keyRGB & 0xFF;
+        
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int rgb = img.getRGB(x, y);
+                int r = (rgb >> 16) & 0xFF;
+                int g = (rgb >> 8) & 0xFF;
+                int b = rgb & 0xFF;
+                
+                // Manhattan distance to handle anti-aliased edges of the magenta background
+                int diff = Math.abs(r - kr) + Math.abs(g - kg) + Math.abs(b - kb);
+                if (diff < 60) {
+                    res.setRGB(x, y, 0x00FFFFFF);
+                } else {
+                    res.setRGB(x, y, rgb);
                 }
             }
-
-            Image scaled = transparent.getScaledInstance(size, size, Image.SCALE_SMOOTH);
-            return new ImageIcon(scaled);
-        } catch (IOException e) {
-            System.err.println("Could not load image: " + path);
-            return new ImageIcon();
         }
+        return res;
+    }
+
+    private void generateHeartImage(boolean full) {
+        String path = full ? "mainplay/heart_full.png" : "mainplay/heart_empty.png";
+        File file = new File(path);
+        if (file.exists()) return;
+        
+        try {
+            BufferedImage img = new BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = img.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            
+            if (full) {
+                g.setColor(new Color(220, 40, 40));
+                g.fillOval(4, 4, 14, 14);
+                g.fillOval(14, 4, 14, 14);
+                int[] tx = {4, 16, 28}, ty = {14, 28, 14};
+                g.fillPolygon(tx, ty, 3);
+            } else {
+                g.setStroke(new BasicStroke(2));
+                g.setColor(new Color(100, 50, 40));
+                g.drawOval(4, 4, 14, 14);
+                g.drawOval(14, 4, 14, 14);
+                int[] tx = {4, 16, 28}, ty = {14, 28, 14};
+                g.drawPolygon(tx, ty, 3);
+            }
+            g.dispose();
+            ImageIO.write(img, "png", file);
+        } catch (Exception e) {}
+    }
+
+    private void initAnimation() {
+        animationTimer = new Timer(100, e -> { animationFrame++; repaint(); });
+        animationTimer.start();
     }
 }

@@ -32,8 +32,8 @@ public class CartoonLogo extends JComponent {
         Font titleFont = new Font("Arial Black", Font.BOLD, 46);
         g2.setFont(titleFont);
         FontMetrics fm = g2.getFontMetrics();
-        String line1 = "CATCH THE";
-        String line2 = "MOUSE";
+        String line1 = "CHEESE CAPER:";
+        String line2 = "THE CATCH";
         int l1w = fm.stringWidth(line1);
         int l2w = fm.stringWidth(line2);
         int l1x = cx - l1w / 2;
@@ -58,12 +58,12 @@ public class CartoonLogo extends JComponent {
             }
         }
 
-        // Yellow-orange gradient fill
-        GradientPaint gp1 = new GradientPaint(0, l1y - fm.getAscent(), new Color(255, 240, 0), 0, l1y, new Color(255, 150, 0));
+        // Yellow-gold gradient fill
+        GradientPaint gp1 = new GradientPaint(0, l1y - fm.getAscent(), new Color(255, 213, 79), 0, l1y, new Color(255, 160, 0));
         g2.setPaint(gp1);
         g2.drawString(line1, l1x, l1y);
 
-        GradientPaint gp2 = new GradientPaint(0, l2y - fm.getAscent(), new Color(255, 240, 0), 0, l2y, new Color(255, 150, 0));
+        GradientPaint gp2 = new GradientPaint(0, l2y - fm.getAscent(), new Color(255, 213, 79), 0, l2y, new Color(255, 160, 0));
         g2.setPaint(gp2);
         g2.drawString(line2, l2x, l2y);
 
