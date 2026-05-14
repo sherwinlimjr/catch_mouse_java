@@ -47,7 +47,7 @@ public class Main extends JFrame {
         bgPanel.add(cartoonLogo, gbc);
 
         // --- Buttons ---
-        JPanel buttonPanel = new JPanel(new GridLayout(3, 1, 0, 15));
+        JPanel buttonPanel = new JPanel(new GridLayout(2, 1, 0, 15));
         buttonPanel.setOpaque(false);
 
         ModernButton playButton = new ModernButton("PLAY CAMPAIGN", new Color(46, 125, 50));
@@ -56,18 +56,11 @@ public class Main extends JFrame {
             showLevelSelection();
         });
 
-        ModernButton endlessButton = new ModernButton("ENDLESS MODE", new Color(194, 24, 91));
-        endlessButton.setPreferredSize(new Dimension(250, 60));
-        endlessButton.addActionListener(e -> {
-            showGameRoom(10, 0, 0);
-        });
-
         ModernButton exitButton = new ModernButton("EXIT GAME", new Color(66, 66, 66));
         exitButton.setPreferredSize(new Dimension(250, 60));
         exitButton.addActionListener(e -> System.exit(0));
 
         buttonPanel.add(playButton);
-        buttonPanel.add(endlessButton);
         buttonPanel.add(exitButton);
 
         gbc.gridy = 1;

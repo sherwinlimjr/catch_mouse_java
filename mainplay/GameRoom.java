@@ -45,11 +45,15 @@ public class GameRoom extends JPanel {
     
     // Directional mouse sprites: [direction][frame] — 0=Right, 1=Left, 2=Up, 3=Down
     private BufferedImage[][] mouseDirFrames = new BufferedImage[4][2];
-    private BufferedImage[] catProwlFrames = new BufferedImage[4];
-    private BufferedImage[] catChaseFrames = new BufferedImage[4];
+    // Directional cat sprites: [direction][frame] — 0=Right, 1=Left, 2=Up, 3=Down
+    private BufferedImage[][] catPatrolFrames = new BufferedImage[4][2];
+    private BufferedImage[][] catChaseFrames  = new BufferedImage[4][2];
     
     private int animationFrame = 0;
     private Timer animationTimer;
+    private Timer mouseMoveTimer;     // Cooldown timer for mouse movement
+    private boolean canMouseMove = true; // Whether mouse may move this tick
+    private static final int MOUSE_MOVE_DELAY = 150; // ms between mouse steps
     
     private List<CatNPC> cats = new ArrayList<>();
     private boolean mouseStunned = false;
@@ -197,7 +201,17 @@ public class GameRoom extends JPanel {
                     Graphics2D g2dSprite = (Graphics2D) g2.create();
                     if (mouseHitFlash > 0) {
                         mouseHitFlash--;
-                        if (mouseHitFlash % 2 != 0) g2dSprite.drawImage(mouseSprite, mx, my, charSize, charSize, null);
+                        // Shake effect
+                        int shakeX = (mouseHitFlash % 2 == 0) ? 4 : -4;
+                        int shakeY = (mouseHitFlash % 3 == 0) ? 4 : -4;
+                        
+                        g2dSprite.drawImage(mouseSprite, mx + shakeX, my + shakeY, charSize, charSize, null);
+                        
+                        // Flashing red tint
+                        if (mouseHitFlash % 4 < 2) {
+                            g2dSprite.setColor(new Color(255, 0, 0, 120));
+                            g2dSprite.fillOval(mx + shakeX + 4, my + shakeY + 4, charSize - 8, charSize - 8);
+                        }
                     } else {
                         g2dSprite.drawImage(mouseSprite, mx, my, charSize, charSize, null);
                     }
@@ -206,15 +220,11 @@ public class GameRoom extends JPanel {
 
                 for (CatNPC cat : cats) {
                     int cx = cat.col * ts + (ts - charSize)/2, cy = cat.row * ts + (ts - charSize)/2;
-                    BufferedImage cs = (cat.state == CatNPC.State.CHASE) ? catChaseFrames[animationFrame % 4] : catProwlFrames[animationFrame % 4];
+                    // Pick directional cat sprite based on cat.direction
+                    BufferedImage[][] catFrameSet = (cat.state == CatNPC.State.CHASE) ? catChaseFrames : catPatrolFrames;
+                    BufferedImage cs = catFrameSet[cat.direction][animationFrame % 2];
                     if (cs != null) {
-                        Graphics2D g2dCat = (Graphics2D) g2.create();
-                        g2dCat.translate(cx + charSize/2, cy + charSize/2);
-                        if (cat.direction == 1) g2dCat.scale(-1, 1);
-                        else if (cat.direction == 2) g2dCat.rotate(-Math.PI / 2);
-                        else if (cat.direction == 3) g2dCat.rotate(Math.PI / 2);
-                        g2dCat.drawImage(cs, -charSize/2, -charSize/2, charSize, charSize, null);
-                        g2dCat.dispose();
+                        g2.drawImage(cs, cx, cy, charSize, charSize, null);
                     }
                 }
             }
@@ -252,7 +262,7 @@ public class GameRoom extends JPanel {
     private AbstractAction createMoveAction(int dRow, int dCol, JPanel board) {
         return new AbstractAction() {
             public void actionPerformed(java.awt.event.ActionEvent e) {
-                if (isGameOver || mouseStunned) return;
+                if (isGameOver || mouseStunned || !canMouseMove) return;
                 
                 if (dCol == 1) mouseDirection = 0;
                 else if (dCol == -1) mouseDirection = 1;
@@ -273,10 +283,17 @@ public class GameRoom extends JPanel {
                         catAiTimer.stop();
                         animationTimer.stop();
                         if (level == Main.maxUnlockedLevel) Main.maxUnlockedLevel++;
+                        JOptionPane.showMessageDialog(GameRoom.this, "You Win!");
                         parentFrame.showLevelSelection();
                     }
                     checkCollisions(board);
                     board.repaint();
+                    // Start cooldown
+                    canMouseMove = false;
+                    if (mouseMoveTimer != null) mouseMoveTimer.stop();
+                    mouseMoveTimer = new Timer(MOUSE_MOVE_DELAY, ev -> { canMouseMove = true; });
+                    mouseMoveTimer.setRepeats(false);
+                    mouseMoveTimer.start();
                 }
             }
         };
@@ -302,11 +319,24 @@ public class GameRoom extends JPanel {
     }
 
     private void initCatAI(JPanel board) {
-        catAiTimer = new Timer(300, e -> {
+        // Patrol speed: 500ms. Chase speed: 220ms, reduced by 10ms per level (min 120ms)
+        int chaseDelay  = Math.max(120, 220 - (level * 10));
+        int patrolDelay = 500;
+
+        // We use a single timer but track state to switch delays dynamically
+        catAiTimer = new Timer(patrolDelay, null);
+        catAiTimer.addActionListener(e -> {
             if (isGameOver) return;
             for (CatNPC c : cats) c.update(mouseRow, mouseCol, mazeMap);
             checkCollisions(board);
             board.repaint();
+
+            // Adjust timer delay based on any cat's current state
+            boolean anyChasing = cats.stream().anyMatch(c -> c.state == CatNPC.State.CHASE);
+            int desiredDelay = anyChasing ? chaseDelay : patrolDelay;
+            if (catAiTimer.getDelay() != desiredDelay) {
+                catAiTimer.setDelay(desiredDelay);
+            }
         });
         catAiTimer.start();
     }
@@ -325,8 +355,8 @@ public class GameRoom extends JPanel {
             JOptionPane.showMessageDialog(this, "Game Over!");
             parentFrame.showMainMenu();
         } else {
-            // Keep mouse position, but reset cats to avoid instant death loop
-            for (CatNPC c : cats) { c.row = c.startRow; c.col = c.startCol; c.state = CatNPC.State.PATROL; }
+            // Keep mouse position. Cats also stay in their current position.
+            // The mouse has invulnerability frames (mouseHitFlash > 0) to escape.
         }
     }
 
@@ -384,9 +414,14 @@ public class GameRoom extends JPanel {
                 }
             }
 
-            for (int i = 0; i < 4; i++) {
-                catProwlFrames[i] = catImg;
-                catChaseFrames[i] = catImg;
+            // Load directional cat sprites (patrol and chase)
+            for (int d = 0; d < 4; d++) {
+                for (int f = 1; f <= 2; f++) {
+                    File patrolFile = new File("mainplay/sprites/cat_" + dirs[d] + "_" + f + ".png");
+                    File chaseFile  = new File("mainplay/sprites/cat_chase_" + dirs[d] + "_" + f + ".png");
+                    catPatrolFrames[d][f - 1] = patrolFile.exists() ? ImageIO.read(patrolFile) : catImg;
+                    catChaseFrames[d][f - 1]  = chaseFile.exists()  ? ImageIO.read(chaseFile)  : catImg;
+                }
             }
         } catch (Exception e) {
             System.err.println("Error loading assets: " + e.getMessage());
@@ -424,7 +459,7 @@ public class GameRoom extends JPanel {
     }
 
     private void initAnimation(JPanel board) {
-        animationTimer = new Timer(100, e -> { animationFrame++; board.repaint(); });
+        animationTimer = new Timer(150, e -> { animationFrame++; board.repaint(); });
         animationTimer.start();
     }
 }
